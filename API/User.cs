@@ -20,7 +20,6 @@ namespace VP_Functions.API
       ILogger log, int id)
     {
       log.LogInformation($"[user] [get] {id}");
-      Response res;
       var conn = new FancyConn();
 
       var cols = new List<string>() {
@@ -30,8 +29,9 @@ namespace VP_Functions.API
         "title", "bio", "pic", "show_exec"
         };
       var reader = await conn.Reader(
-        $@"SELECT {string.Join(",", cols)} FROM [user] WHERE user_id = @id LIMIT 1",
+        $@"SELECT TOP 1 {string.Join(",", cols)} FROM [user] WHERE user_id = @id",
         new Dictionary<string, object>() { { "id", id } });
+      if (reader == null) return Response.Error(500, "Unable to fetch user.", conn.lastError);
 
       if (reader.HasRows)
       {
@@ -39,14 +39,12 @@ namespace VP_Functions.API
         var data = new Dictionary<string, object>();
         for (int i = 0; i < cols.Count; i++)
           data.Add(cols[i], reader[i]);
-        res = new Response(200, "Retrieved user successfully.", data);
+        return Response.Ok(200, "Retrieved user successfully.", data);
       }
       else
       {
-        res = new Response(404, "User not found.");
+        return Response.NotFound("User not found.");
       }
-
-      return res.Result();
     }
   }
 }

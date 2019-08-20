@@ -9,7 +9,7 @@ namespace VP_Functions.Models
   public class FancyConn
   {
     private SqlConnection conn;
-    private Exception lastError;
+    public Exception lastError;
 
     public FancyConn()
     {
