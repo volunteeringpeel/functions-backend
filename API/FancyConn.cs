@@ -3,12 +3,15 @@ using System.Data.SqlClient;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using System.Security.Claims;
 
-namespace VP_Functions.Models
+namespace VP_Functions.API
 {
-  public class FancyConn
+  public class FancyConn : IDisposable
   {
-    private SqlConnection conn;
+    public bool Disposed = false;
+    SqlConnection conn;
     public Exception lastError;
 
     public FancyConn()
@@ -16,6 +19,23 @@ namespace VP_Functions.Models
       string connStr = Environment.GetEnvironmentVariable("sqldb_connection");
       this.conn = new SqlConnection(connStr);
       this.conn.Open();
+    }
+
+    public void Dispose()
+    {
+      this.Dispose(true);
+      GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+      if (this.Disposed) return;
+      if (disposing)
+      {
+        this.conn.Close();
+        this.conn.Dispose();
+      }
+      Disposed = true;
     }
 
     public async Task<SqlDataReader> Reader(string query, Dictionary<string, object> queryParams)
@@ -52,14 +72,28 @@ namespace VP_Functions.Models
       {
         cmd = new SqlCommand(query, this.conn);
         rows = await cmd.ExecuteNonQueryAsync();
-      } catch (SqlException e)
+      }
+      catch (SqlException e)
       {
         this.lastError = e;
-      } finally
+      }
+      finally
       {
         if (cmd != null) cmd.Dispose();
       }
       return rows;
+    }
+
+    public async Task<Role?> GetRole(string email)
+    {
+      // get role from database
+      var reader = await this.Reader("SELECT TOP 1 [role_id] FROM [user] WHERE [email] = @email",
+        new Dictionary<string, object>() { { "email", email } });
+      if (reader == null || !reader.HasRows) return null;
+      reader.Read();
+      var role = (Role)reader[0];
+      reader.Close();
+      return role;
     }
   }
 }

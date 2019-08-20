@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 
@@ -7,37 +8,48 @@ namespace VP_Functions.Models
 {
   class Response
   {
-    private int StatusCode;
-    public Object data;
+    HttpStatusCode StatusCode;
+    public object data;
     public string message;
 
-    public Response(int statusCode = 200, string message = "", Object data = null)
+    public Response(HttpStatusCode statusCode = HttpStatusCode.OK, string message = "", object data = null)
     {
       this.StatusCode = statusCode;
       this.message = message;
       this.data = data;
     }
 
-    public static OkObjectResult Ok(int statusCode = 200, string message = "", Object data = null)
+    public static OkObjectResult Ok(string message = "", object data = null,
+      HttpStatusCode statusCode = HttpStatusCode.OK)
     {
       var res = new Response(statusCode, message, data);
       var obj = new OkObjectResult(res);
-      obj.StatusCode = res.StatusCode;
+      obj.StatusCode = (int)res.StatusCode;
+      return obj;
+    }
+
+    public static ObjectResult Error(string message = "Internal server error.", object data = null,
+      HttpStatusCode statusCode = HttpStatusCode.InternalServerError)
+    {
+      var res = new Response(statusCode, message, data);
+      var obj = new ObjectResult(res);
+      obj.StatusCode = (int)res.StatusCode;
       return obj;
     }
 
     public static NotFoundObjectResult NotFound(string message = "Not found.")
     {
-      var res = new Response(404, message, null);
+      var res = new Response(HttpStatusCode.NotFound, message, null);
       var obj = new NotFoundObjectResult(res);
       return obj;
     }
 
-    public static ObjectResult Error(int statusCode = 500, string message = "Internal server error.", Object data = null)
+    public static BadRequestObjectResult BadRequest(string message = "Bad parameters.", object data = null,
+      HttpStatusCode statusCode = HttpStatusCode.BadRequest)
     {
       var res = new Response(statusCode, message, data);
-      var obj = new ObjectResult(res);
-      obj.StatusCode = res.StatusCode;
+      var obj = new BadRequestObjectResult(res);
+      obj.StatusCode = (int)res.StatusCode;
       return obj;
     }
   }
