@@ -19,7 +19,6 @@ namespace VP_Functions.Test
     protected ClaimsPrincipal volunteerUser;
     protected ILogger log = new ListLogger();
     protected ITestOutputHelper output;
-    protected FancyConn conn;
 
     protected FunctionUnitTest(ITestOutputHelper output)
     {
@@ -35,7 +34,6 @@ namespace VP_Functions.Test
           Environment.SetEnvironmentVariable(kv.Name, kv.Value.ToString());
         }
       }
-      this.conn = new FancyConn();
 
       // set up mock principal
       var claims = new List<Claim>()
@@ -55,18 +53,18 @@ namespace VP_Functions.Test
       this.volunteerUser = new ClaimsPrincipal(new ClaimsIdentity(claims, "AuthenticationTypes.Federation"));
     }
 
-    public DefaultHttpRequest CreateHttpRequest(ClaimsPrincipal auth = null, string queryStringKey = null, string queryStringValue = null)
+    public HttpRequest CreateHttpRequest(
+      ClaimsPrincipal auth = null, string queryStringKey = null, string queryStringValue = null)
     {
       if (auth == null) auth = this.systemUser;
 
       var context = new DefaultHttpContext();
       context.User = auth;
-      var request = new DefaultHttpRequest(context);
       if (queryStringKey != null)
-        request.Query = new QueryCollection(new Dictionary<string, StringValues>() {
+        context.Request.Query = new QueryCollection(new Dictionary<string, StringValues>() {
           { queryStringKey, queryStringValue } });
-      request.HttpContext.User = auth;
-      return request;
+      context.User = auth;
+      return context.Request;
     }
   }
 }
