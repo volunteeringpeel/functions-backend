@@ -19,6 +19,10 @@ namespace VP_Functions.API
 {
   public static class User
   {
+    /// <summary>
+    /// Get a single user.
+    /// </summary>
+    /// <param name="id">ID of user to get</param>
     [FunctionName("GetUser")]
     public static async Task<IActionResult> GetUser(
       [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "user/{id:int}")] HttpRequest req,
@@ -73,6 +77,9 @@ namespace VP_Functions.API
       }
     }
 
+    /// <summary>
+    /// Like <see cref="GetUser"/>, but for the currently logged in user.
+    /// </summary>
     [FunctionName("GetCurrentUser")]
     public static async Task<IActionResult> GetCurrentUser(
       [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "me")] HttpRequest req,
@@ -161,6 +168,10 @@ namespace VP_Functions.API
       }
     }
 
+    /// <summary>
+    /// Update a given user.
+    /// </summary>
+    /// <param name="id">ID of user to set</param>
     [FunctionName("SetUser")]
     public static async Task<IActionResult> SetUser(
       [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "user/{id:int}")] HttpRequest req,

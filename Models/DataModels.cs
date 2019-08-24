@@ -5,6 +5,7 @@ namespace VP_Functions.Models
 {
   public enum Role : int
   {
+    None = 0,
     Volunteer = 1,
     Organizer = 2,
     Executive = 3

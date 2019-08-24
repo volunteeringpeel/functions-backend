@@ -164,7 +164,7 @@ namespace VP_Functions.API
       // get role from database
       var role = await this.Scalar("SELECT TOP 1 [role_id] FROM [user] WHERE [email] = @email",
         new Dictionary<string, object>() { { "email", email } });
-      return (Role)role;
+      return (role == null) ? Role.None : (Role)role;
     }
   }
 }
