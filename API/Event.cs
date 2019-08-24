@@ -94,14 +94,17 @@ namespace VP_Functions.API
       }
     }
 
+    [FunctionName("SetEvent")]
+    public static async Task<IActionResult> SetEvent(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route ="event/{id:int}")])
+
     /// <summary>
     /// Delete an event, including all shifts
     /// </summary>
     /// <param name="id">ID of event to delete</param>
-    /// <returns></returns>
     [FunctionName("DeleteEvent")]
     public static async Task<IActionResult> DeleteEvent(
-      [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "events/{id:int}")] HttpRequest req,
+      [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "event/{id:int}")] HttpRequest req,
       ClaimsPrincipal principal, ILogger log, int id)
     {
       string email = principal?.FindFirst(ClaimTypes.Email)?.Value;

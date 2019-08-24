@@ -225,5 +225,44 @@ namespace VP_Functions.API
         FancyConn.Shared.Dispose();
       }
     }
+
+    /// <summary>
+    /// Delete a user, including all related data
+    /// </summary>
+    /// <param name="id">ID of user to delete</param>
+    [FunctionName("DeleteUser")]
+    public static async Task<IActionResult> DeleteUser(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "user/{id:int}")] HttpRequest req,
+      ClaimsPrincipal principal, ILogger log, int id)
+    {
+      string email = principal?.FindFirst(ClaimTypes.Email)?.Value;
+      if (email == null)
+        return Response.BadRequest("Not logged in.");
+      FancyConn.EnsureShared();
+
+      try
+      {
+        var role = await FancyConn.Shared.GetRole(email);
+        if (role < Role.Executive)
+        {
+          log.LogWarning($"[event] Unauthorized attempt by {email} to delete record {id}");
+          return Response.Error<JToken>($"Unauthorized.", statusCode: HttpStatusCode.Unauthorized);
+        }
+
+        var rows = await FancyConn.Shared.NonQuery("DELETE FROM [user] WHERE [user_id] = @id",
+          new Dictionary<string, object>() { { "id", id } });
+        if (rows != 1) return Response.Error("Unable to delete event", FancyConn.Shared.lastError);
+
+        return Response.Ok("Deleted user successfully.");
+      }
+      catch (Exception e)
+      {
+        return Response.Error(data: e);
+      }
+      finally
+      {
+        FancyConn.Shared.Dispose();
+      }
+    }
   }
 }
