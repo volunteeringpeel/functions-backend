@@ -4,6 +4,7 @@ using System.Data.SqlClient;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using VP_Functions.Models;
+using Newtonsoft.Json.Linq;
 
 namespace VP_Functions.API
 {
@@ -60,15 +61,44 @@ namespace VP_Functions.API
       return new SqlCommand(query, this.conn);
     }
 
+    public static (string, Dictionary<string, object>) MakeUpsertQuery(string table, string pk, object pkVal, List<string> cols, JObject values)
+    {
+      // generate query parts
+      int i = 0;
+      var equals = new List<string>();
+      var insertCols = new List<string>();
+      var insertVals = new List<string>();
+      var parameters = new Dictionary<string, object>() { { "pkVal", pkVal } };
+      foreach (var col in cols)
+      {
+        if (values.ContainsKey(col))
+        {
+          equals.Add($"[{col}] = @p{i.ToString()}");
+          insertCols.Add($"[{col}]");
+          insertVals.Add($"@p{i.ToString()}");
+          parameters.Add($"@p{i.ToString()}", values[col].Value<string>());
+          i++;
+        }
+      }
+
+      var query = $@"SET TRANSACTION ISOLATION LEVEL SERIALIZABLE; BEGIN TRANSACTION;
+        UPDATE [{table}] SET {string.Join(", ", equals)} WHERE [{pk}] = @pkVal;
+        IF @@ROWCOUNT = 0; BEGIN
+          INSERT INTO [{table}]({string.Join(", ", insertCols)}) VALUES ({string.Join(", ", insertVals)});
+          SELECT SCOPE_IDENTITY();
+        END; COMMIT TRANSACTION;";
+
+      return (query, parameters);
+    }
+
     /// <summary>
     /// Execute a SQL query that returns rows as a <see cref="SqlDataReader"/>
     /// </summary>
     /// <param name="query">SQL query to execute</param>
     /// <param name="queryParams">SQL parameters in a key-value format</param>
-    public async Task<SqlDataReader> Reader(string query, Dictionary<string, object> queryParams = null)
+    public async Task<(bool err, SqlDataReader reader)> Reader(string query, Dictionary<string, object> queryParams = null)
     {
       SqlCommand cmd = null;
-      SqlDataReader reader = null;
       try
       {
         cmd = this.MakeCommand(query);
@@ -78,18 +108,18 @@ namespace VP_Functions.API
             var value = kv.Value ?? DBNull.Value;
             cmd.Parameters.AddWithValue(kv.Key, value);
           }
-        reader = await cmd.ExecuteReaderAsync();
+        var reader = await cmd.ExecuteReaderAsync();
+        return (false, reader);
       }
       catch (SqlException e)
       {
         this.lastError = e;
-        // todo: propogate error
+        return (true, null);
       }
       finally
       {
         if (cmd != null) cmd.Dispose();
       }
-      return reader;
     }
 
     /// <summary>
@@ -97,10 +127,9 @@ namespace VP_Functions.API
     /// </summary>
     /// <param name="query">SQL query to execute</param>
     /// <param name="queryParams">SQL parameters in key-value format</param>
-    public async Task<object> Scalar(string query, Dictionary<string, object> queryParams)
+    public async Task<(bool err, object val)> Scalar(string query, Dictionary<string, object> queryParams)
     {
       SqlCommand cmd = null;
-      object val = null;
       try
       {
         cmd = this.MakeCommand(query);
@@ -109,18 +138,18 @@ namespace VP_Functions.API
           var value = kv.Value ?? DBNull.Value;
           cmd.Parameters.AddWithValue(kv.Key, value);
         }
-        val = await cmd.ExecuteScalarAsync();
+        var val = await cmd.ExecuteScalarAsync();
+        return (false, val);
       }
       catch (SqlException e)
       {
         this.lastError = e;
-        // todo: propogate error
+        return (true, null);
       }
       finally
       {
         if (cmd != null) cmd.Dispose();
       }
-      return val;
     }
 
     /// <summary>
@@ -129,7 +158,7 @@ namespace VP_Functions.API
     /// <param name="query">SQL query to execute</param>
     /// <param name="queryParams">SQL parameters in key-value format</param>
     /// <returns>Number of rows affected</returns>
-    public async Task<int> NonQuery(string query, Dictionary<string, object> queryParams = null)
+    public async Task<(bool err, int rows)> NonQuery(string query, Dictionary<string, object> queryParams = null)
     {
       SqlCommand cmd = null;
       int rows = -1;
@@ -142,16 +171,17 @@ namespace VP_Functions.API
           cmd.Parameters.AddWithValue(kv.Key, value);
         }
         rows = await cmd.ExecuteNonQueryAsync();
+        return (false, rows);
       }
       catch (SqlException e)
       {
         this.lastError = e;
+        return (true, 0);
       }
       finally
       {
         if (cmd != null) cmd.Dispose();
       }
-      return rows;
     }
 
     /// <summary>
@@ -162,7 +192,7 @@ namespace VP_Functions.API
     public async Task<Role?> GetRole(string email)
     {
       // get role from database
-      var role = await this.Scalar("SELECT TOP 1 [role_id] FROM [user] WHERE [email] = @email",
+      var (_, role) = await this.Scalar("SELECT TOP 1 [role_id] FROM [user] WHERE [email] = @email",
         new Dictionary<string, object>() { { "email", email } });
       return (role == null) ? Role.None : (Role)role;
     }

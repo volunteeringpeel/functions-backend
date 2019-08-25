@@ -48,10 +48,10 @@ namespace VP_Functions.API
         "email", "phone_1", "phone_2", "school",
         "title", "bio", "pic", "show_exec"
         };
-        var reader = await FancyConn.Shared.Reader(
+        var (err, reader) = await FancyConn.Shared.Reader(
           $@"SELECT TOP 1 [{string.Join("], [", cols)}] FROM [user] WHERE [user_id] = @id",
           new Dictionary<string, object>() { { "id", id } });
-        if (reader == null) return Response.Error("Unable to fetch user.", FancyConn.Shared.lastError);
+        if (err) return Response.Error("Unable to fetch user.", FancyConn.Shared.lastError);
 
         if (reader.HasRows)
         {
@@ -103,9 +103,9 @@ namespace VP_Functions.API
             { "last", principal.FindFirst(ClaimTypes.Surname)?.Value },
             { "email", email }
           };
-          var newID = await FancyConn.Shared.Scalar(@"INSERT INTO [user] (first_name, last_name, email, role_id)
+          var (error, newID) = await FancyConn.Shared.Scalar(@"INSERT INTO [user] (first_name, last_name, email, role_id)
             VALUES (@first, @last, @email, 1); SELECT SCOPE_IDENTITY()", newData);
-          if (newID == null) return Response.Error("Unable to create user.", FancyConn.Shared.lastError);
+          if (error) return Response.Error("Unable to create user.", FancyConn.Shared.lastError);
           created = true;
         }
 
@@ -116,11 +116,11 @@ namespace VP_Functions.API
         "email", "phone_1", "phone_2", "school",
         "title", "bio", "pic", "show_exec"
         };
-        var reader = await FancyConn.Shared.Reader(
+        var (err, reader) = await FancyConn.Shared.Reader(
           $@"SELECT TOP 1 [{string.Join("], [", cols)}] FROM [user] WHERE [email] = @email",
           new Dictionary<string, object>() { { "email", email } });
-        if (reader?.HasRows != true) return Response.Error("Unable to fetch user.", FancyConn.Shared.lastError);
-        reader.Read();
+        if (err) return Response.Error("Unable to fetch user.", FancyConn.Shared.lastError);
+        if (!reader.Read()) return Response.Error<object>("User does not exist.", statusCode: HttpStatusCode.NotFound);
         var user = new JObject();
         foreach (var col in cols)
           user.Add(col, JToken.FromObject(reader[col]));
@@ -128,12 +128,12 @@ namespace VP_Functions.API
 
         // get confirm levels
         var userShifts = new JArray();
-        reader = await FancyConn.Shared.Reader(@"SELECT [user_shift_id], [hours],
+        (err, reader) = await FancyConn.Shared.Reader(@"SELECT [user_shift_id], [hours],
           [confirm_level_id], [confirm_level], [confirm_description], [letter],
           [shift_id], [shift_num], [start_time], [end_time], [event_id], [name]
           FROM [vw_user_shift] WHERE [user_id] = @id",
           new Dictionary<string, object>() { { "id", user["user_id"].Value<string>() } });
-        if (reader == null) return Response.Error("Unable to fetch attendance statuses.", FancyConn.Shared.lastError);
+        if (err) return Response.Error("Unable to fetch attendance statuses.", FancyConn.Shared.lastError);
         while (reader.Read())
         {
           var us = new JObject(
@@ -212,8 +212,9 @@ namespace VP_Functions.API
           i++;
         }
 
-        var rows = await FancyConn.Shared.NonQuery($"UPDATE [user] SET {string.Join(",", equals)} WHERE [user_id] = @id", parameters);
-        if (rows < 1) return Response.Error("Unable to update user data.", FancyConn.Shared.lastError);
+        var (err, rows) = await FancyConn.Shared.NonQuery($"UPDATE [user] SET {string.Join(",", equals)} WHERE [user_id] = @id", parameters);
+        if (err) return Response.Error("Unable to update user data.", FancyConn.Shared.lastError);
+        if (rows != 1) return Response.NotFound("Unable to find user.");
         return Response.Ok("User updated successfully.");
       }
       catch (Exception e)
@@ -249,9 +250,10 @@ namespace VP_Functions.API
           return Response.Error<JToken>($"Unauthorized.", statusCode: HttpStatusCode.Unauthorized);
         }
 
-        var rows = await FancyConn.Shared.NonQuery("DELETE FROM [user] WHERE [user_id] = @id",
+        var (err, rows) = await FancyConn.Shared.NonQuery("DELETE FROM [user] WHERE [user_id] = @id",
           new Dictionary<string, object>() { { "id", id } });
-        if (rows != 1) return Response.Error("Unable to delete event", FancyConn.Shared.lastError);
+        if (err) return Response.Error("Unable to delete user", FancyConn.Shared.lastError);
+        if (rows != 1) return Response.NotFound("Unable to find user.");
 
         return Response.Ok("Deleted user successfully.");
       }
