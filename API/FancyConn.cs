@@ -83,7 +83,7 @@ namespace VP_Functions.API
 
       var query = $@"SET TRANSACTION ISOLATION LEVEL SERIALIZABLE; BEGIN TRANSACTION;
         UPDATE [{table}] SET {string.Join(", ", equals)} WHERE [{pk}] = @pkVal;
-        IF @@ROWCOUNT = 0; BEGIN
+        IF @@ROWCOUNT = 0 BEGIN
           INSERT INTO [{table}]({string.Join(", ", insertCols)}) VALUES ({string.Join(", ", insertVals)});
           SELECT SCOPE_IDENTITY();
         END; COMMIT TRANSACTION;";

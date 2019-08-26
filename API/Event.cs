@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Extensions.Logging;
+using Microsoft.WindowsAzure.Storage.Blob;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
@@ -74,7 +75,6 @@ namespace VP_Functions.API
         var shiftCols = new List<string>() { "shift_id", "event_id", "shift_num", "start_time", "end_time", "meals", "spots_taken", "max_spots", "notes" };
         if (filter != "current") shiftCols.AddRange(new string[] { "active", "archived" });
 
-
         (err, reader) = await FancyConn.Shared.Reader($"SELECT [{string.Join("], [", shiftCols)}] FROM [vw_shift]" + where);
         if (err) return Response.Error($"Unable to retrieve shifts.", FancyConn.Shared.lastError);
         while (reader.Read())
@@ -104,49 +104,61 @@ namespace VP_Functions.API
     [FunctionName("SetEvent")]
     public static async Task<IActionResult> SetEvent(
       [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "event/{id:int}")] HttpRequest req,
+      [Blob("website-upload/hours-letters", FileAccess.ReadWrite)] CloudBlobDirectory blobDirectory,
       ClaimsPrincipal principal, ILogger log, int id)
     {
-      string email = principal?.FindFirst(ClaimTypes.Email)?.Value;
-      if (email == null)
-        return Response.BadRequest("Not logged in.");
+      //string email = principal?.FindFirst(ClaimTypes.Email)?.Value;
+      //if (email == null)
+      //  return Response.BadRequest("Not logged in.");
+      var body = await req.GetBodyParameters();
+      var deleteShifts = body["deleteShifts"]?.Value<JArray>().Select(s => (int)s);
+      var shifts = body["shifts"]?.Values<JObject>();
+
       FancyConn.EnsureShared();
 
       try
       {
-        var role = await FancyConn.Shared.GetRole(email);
-        if (role < Role.Executive)
+        //var role = await FancyConn.Shared.GetRole(email);
+        //if (role < Role.Executive)
+        //{
+        //  log.LogWarning($"[event] Unauthorized attempt by {email} to edit record {id}");
+        //  return Response.Error<JToken>($"Unauthorized.", statusCode: HttpStatusCode.Unauthorized);
+        //}
+
+        var letter = req.Form.Files.GetFile("letter");
+        if (letter != null)
         {
-          log.LogWarning($"[event] Unauthorized attempt by {email} to edit record {id}");
-          return Response.Error<JToken>($"Unauthorized.", statusCode: HttpStatusCode.Unauthorized);
+          var blob = blobDirectory.GetBlockBlobReference(letter.FileName);
+          await blob.UploadFromStreamAsync(letter.OpenReadStream());
         }
 
-        string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-        var body = JObject.Parse(requestBody);
-
-        var eventCols = new string[] { "name", "description", "transport", "address", "add_info" }.ToList();
+        var eventCols = new string[] { "name", "description", "transport", "address", "add_info", "letter" }.ToList();
         var (eventQuery, eventParams) = FancyConn.MakeUpsertQuery("event", "event_id", id, eventCols, body);
         var (err, newId) = await FancyConn.Shared.Scalar(eventQuery, eventParams);
         if (err) return Response.Error("Unable to update event.", FancyConn.Shared.lastError);
 
-        var deleteShifts = body["deleteShifts"].Value<JArray>().Select(s => (int)s).ToList();
-        var delQuery = $"DELETE FROM [shifts] WHERE [shift_id] IN ({string.Join(", ", deleteShifts.Map(x => $"@{x}"))})";
-        var delParams = deleteShifts.ToDictionary(x => $"p{x}", x => (object)x);
-        (err, _) = await FancyConn.Shared.NonQuery(delQuery, delParams);
-        if (err) return Response.Error("Unable to delete shifts.", FancyConn.Shared.lastError);
-
-        int?[] errors = await Task.WhenAll(body["shifts"].Values<JObject>().Select<JObject, Task<int?>>(async s =>
+        if (deleteShifts.Count() > 0)
         {
-          var shiftCols = new string[] { "event_id", "shift_num", "max_spots", "start_time", "end_time", "meals", "notes" }.ToList();
-          s["event_id"] = new JValue(newId ?? id);
-          var (shiftQuery, shiftParams) = FancyConn.MakeUpsertQuery("shift", "shift_id", (int)s["shift_id"], shiftCols, s);
-          var (error, _) = await FancyConn.Shared.NonQuery(shiftQuery, shiftParams);
-          if (error) return (int)s["shift_num"];
-          return null;
-        }));
-        var failed = string.Join(", ", errors.Where(x => x != null).ToList());
-        if (failed.Length > 0) return Response.Error($"Unable to update shift {failed}", FancyConn.Shared.lastError);
+          var delQuery = $"DELETE FROM [shifts] WHERE [shift_id] IN ({string.Join(", ", deleteShifts.Map(x => $"@{x}"))})";
+          var delParams = deleteShifts.ToDictionary(x => $"p{x}", x => (object)x);
+          (err, _) = await FancyConn.Shared.NonQuery(delQuery, delParams);
+          if (err) return Response.Error("Unable to delete shifts.", FancyConn.Shared.lastError);
+        }
 
-        // TODOFILE: handle hours letter upload
+        if (shifts.Count() > 0)
+        {
+          var errors = await Task.WhenAll(shifts.Select<JObject, Task<int?>>(async s =>
+          {
+            var shiftCols = new string[] { "event_id", "shift_num", "max_spots", "start_time", "end_time", "meals", "notes" }.ToList();
+            s["event_id"] = new JValue(newId ?? id);
+            var (shiftQuery, shiftParams) = FancyConn.MakeUpsertQuery("shift", "shift_id", (int)s["shift_id"], shiftCols, s);
+            var (error, _) = await FancyConn.Shared.NonQuery(shiftQuery, shiftParams);
+            if (error) return (int)s["shift_num"];
+            return null;
+          }));
+          var failed = string.Join(", ", errors.Where(x => x != null).ToList());
+          if (failed.Length > 0) return Response.Error($"Unable to update shift {failed}", FancyConn.Shared.lastError);
+        }
 
         return Response.Ok("Updated event successfully.");
       }
