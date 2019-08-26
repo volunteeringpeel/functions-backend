@@ -107,9 +107,9 @@ namespace VP_Functions.API
       [Blob("website-upload/hours-letters", FileAccess.ReadWrite)] CloudBlobDirectory blobDirectory,
       ClaimsPrincipal principal, ILogger log, int id)
     {
-      //string email = principal?.FindFirst(ClaimTypes.Email)?.Value;
-      //if (email == null)
-      //  return Response.BadRequest("Not logged in.");
+      string email = principal?.FindFirst(ClaimTypes.Email)?.Value;
+      if (email == null)
+        return Response.BadRequest("Not logged in.");
       var body = await req.GetBodyParameters();
       var deleteShifts = body["deleteShifts"]?.Value<JArray>().Select(s => (int)s);
       var shifts = body["shifts"]?.Values<JObject>();
@@ -118,33 +118,44 @@ namespace VP_Functions.API
 
       try
       {
-        //var role = await FancyConn.Shared.GetRole(email);
-        //if (role < Role.Executive)
-        //{
-        //  log.LogWarning($"[event] Unauthorized attempt by {email} to edit record {id}");
-        //  return Response.Error<JToken>($"Unauthorized.", statusCode: HttpStatusCode.Unauthorized);
-        //}
+        var role = await FancyConn.Shared.GetRole(email);
+        if (role < Role.Executive)
+        {
+          log.LogWarning($"[event] Unauthorized attempt by {email} to edit record {id}");
+          return Response.Error<JToken>($"Unauthorized.", statusCode: HttpStatusCode.Unauthorized);
+        }
 
+        var eventCols = new List<string> { "name", "description", "transport", "address", "add_info" };
+
+        // handle hours letter
         var letter = req.Form.Files.GetFile("letter");
         if (letter != null)
         {
-          var blob = blobDirectory.GetBlockBlobReference(letter.FileName);
+          var blob = blobDirectory.GetBlockBlobReference(letter.FileName.WithTimestamp());
           await blob.UploadFromStreamAsync(letter.OpenReadStream());
+          eventCols.Add("letter");
+          body.Add("letter", blob.Uri.ToString());
         }
 
-        var eventCols = new string[] { "name", "description", "transport", "address", "add_info", "letter" }.ToList();
+        object newId = null;
         var (eventQuery, eventParams) = FancyConn.MakeUpsertQuery("event", "event_id", id, eventCols, body);
-        var (err, newId) = await FancyConn.Shared.Scalar(eventQuery, eventParams);
-        if (err) return Response.Error("Unable to update event.", FancyConn.Shared.lastError);
+        if (!string.IsNullOrEmpty(eventQuery))
+        {
+          var err = false;
+          (err, newId) = await FancyConn.Shared.Scalar(eventQuery, eventParams);
+          if (err) return Response.Error("Unable to update event.", FancyConn.Shared.lastError);
+        }
 
+        // handle deletion of shifts
         if (deleteShifts.Count() > 0)
         {
           var delQuery = $"DELETE FROM [shifts] WHERE [shift_id] IN ({string.Join(", ", deleteShifts.Map(x => $"@{x}"))})";
           var delParams = deleteShifts.ToDictionary(x => $"p{x}", x => (object)x);
-          (err, _) = await FancyConn.Shared.NonQuery(delQuery, delParams);
+          var (err, _) = await FancyConn.Shared.NonQuery(delQuery, delParams);
           if (err) return Response.Error("Unable to delete shifts.", FancyConn.Shared.lastError);
         }
 
+        // handle shift updates
         if (shifts.Count() > 0)
         {
           var errors = await Task.WhenAll(shifts.Select<JObject, Task<int?>>(async s =>

@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Data.SqlClient;
 using System.IO;
-using System.Linq;
 using System.Net;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -11,8 +9,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
+using Microsoft.WindowsAzure.Storage.Blob;
 using Newtonsoft.Json.Linq;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
 using VP_Functions.Models;
 
 namespace VP_Functions.API
@@ -169,17 +169,20 @@ namespace VP_Functions.API
     }
 
     /// <summary>
-    /// Update a given user.
+    /// Create or update a given user.
     /// </summary>
-    /// <param name="id">ID of user to set</param>
+    /// <param name="id">ID of user to update, or -1 to create</param>
     [FunctionName("SetUser")]
     public static async Task<IActionResult> SetUser(
       [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "user/{id:int}")] HttpRequest req,
+      [Blob("website-upload/exec-photos", FileAccess.ReadWrite)] CloudBlobDirectory blobDirectory,
       ClaimsPrincipal principal, ILogger log, int id)
     {
       string email = principal?.FindFirst(ClaimTypes.Email)?.Value;
       if (email == null)
         return Response.BadRequest("Not logged in.");
+      var body = await req.GetBodyParameters();
+
       FancyConn.EnsureShared();
 
       try
@@ -191,30 +194,31 @@ namespace VP_Functions.API
           return Response.Error<object>($"Unauthorized.", statusCode: HttpStatusCode.Unauthorized);
         }
 
-        string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-        dynamic body = JsonConvert.DeserializeObject(requestBody);
+        var validCols = new List<string> { "first_name", "last_name",
+          "email", "phone_1", "phone_2", "school", "role_id", "bio", "title", "show_exec" };
 
-        var cols = new string[] { "first_name", "last_name",
-          "email", "phone_1", "phone_2", "school", "role_id", "bio", "title", "pic", "show_exec" }.ToList();
-
-        var equals = new List<string>();
-        var parameters = new Dictionary<string, object>() { { "id", id } };
-        int i = 0;
-        foreach (JProperty kv in body)
+        // handle exec picture
+        var pic = req.Form.Files.GetFile("pic");
+        if (pic != null)
         {
-          string col = kv.Name;
-          JToken value = kv.Value;
-          if (!cols.Contains(col))
-            return Response.Error($"Passed unsupported column {col}.");
+          var picStream = pic.OpenReadStream();
+          var img = Image.Load(picStream);
+          // resize to width of 350px while maintaining aspect ratio
+          img.Mutate(i => i.Resize(0, 350));
 
-          equals.Add($"[{col}] = @p{i.ToString()}");
-          parameters.Add($"@p{i.ToString()}", value?.ToString());
-          i++;
+          var blob = blobDirectory.GetBlockBlobReference(pic.FileName.WithTimestamp());
+          await blob.UploadFromStreamAsync(pic.OpenReadStream());
+          validCols.Add("pic");
+          body.Add("pic", blob.Uri.ToString());
         }
 
-        var (err, rows) = await FancyConn.Shared.NonQuery($"UPDATE [user] SET {string.Join(",", equals)} WHERE [user_id] = @id", parameters);
-        if (err) return Response.Error("Unable to update user data.", FancyConn.Shared.lastError);
-        if (rows != 1) return Response.NotFound("Unable to find user.");
+        var (userQuery, userParams) = FancyConn.MakeUpsertQuery("user", "user_id", id, validCols, body);
+        if (!string.IsNullOrEmpty(userQuery))
+        {
+          var (err, newId) = await FancyConn.Shared.Scalar(userQuery, userParams);
+          if (err) return Response.Error("Unable to update user.", FancyConn.Shared.lastError);
+        }
+
         return Response.Ok("User updated successfully.");
       }
       catch (Exception e)

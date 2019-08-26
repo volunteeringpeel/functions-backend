@@ -80,6 +80,8 @@ namespace VP_Functions.API
           i++;
         }
       }
+      // short-circuit if there's no valid columns to update
+      if (i == 0) return (null, null);
 
       var query = $@"SET TRANSACTION ISOLATION LEVEL SERIALIZABLE; BEGIN TRANSACTION;
         UPDATE [{table}] SET {string.Join(", ", equals)} WHERE [{pk}] = @pkVal;

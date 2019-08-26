@@ -63,5 +63,8 @@ namespace VP_Functions
         return data;
       }
     }
+
+    public static string WithTimestamp(this string fn) =>
+      Path.GetFileNameWithoutExtension(fn) + "-" + DateTime.Now.ToString("yyyyMMddHHmmssfff") + Path.GetExtension(fn);
   }
 }
