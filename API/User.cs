@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Data.SqlClient;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Security.Claims;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -53,19 +56,30 @@ namespace VP_Functions.API
           new Dictionary<string, object>() { { "id", id } });
         if (err) return Response.Error("Unable to fetch user.", FancyConn.Shared.lastError);
 
+        var data = new JObject();
         if (reader.HasRows)
         {
           reader.Read();
-          var data = new JObject();
           foreach (var col in cols)
             data.Add(col, JToken.FromObject(reader[col]));
           reader.Close();
-          return Response.Ok("Retrieved user successfully.", data);
         }
         else
         {
           return Response.NotFound("User not found.");
         }
+
+        // get mail list subscriptions
+        (err, reader) = await User.GetUserMailLists(id);
+        if (err) return Response.Error("Unable to get mail list subscriptions.", FancyConn.Shared.lastError);
+
+        var mailLists = new JArray();
+        while (reader.Read())
+          mailLists.Add(new JObject(from c in reader.GetColumnSchema()
+                                    select new JProperty(c.ColumnName, reader[(int)c.ColumnOrdinal])));
+        data.Add("mail_lists", mailLists);
+
+        return Response.Ok("Retrieved user successfully.", data);
       }
       catch (Exception e)
       {
@@ -156,6 +170,16 @@ namespace VP_Functions.API
         }
         reader.Close();
 
+        // get mail list subscriptions
+        (err, reader) = await User.GetUserMailLists(user["user_id"].Value<int>());
+        if (err) return Response.Error("Unable to get mail list subscriptions.", FancyConn.Shared.lastError);
+
+        var mailLists = new JArray();
+        while (reader.Read())
+          mailLists.Add(new JObject(from c in reader.GetColumnSchema()
+                                    select new JProperty(c.ColumnName, reader[(int)c.ColumnOrdinal])));
+        user.Add("mail_lists", mailLists);
+
         return Response.Ok("Retrieved user successfully.", new { user, created, userShifts });
       }
       catch (Exception e)
@@ -188,14 +212,18 @@ namespace VP_Functions.API
       try
       {
         var role = await FancyConn.Shared.GetRole(email);
-        if (role < Role.Executive)
+        // generate error if not an exec AND not updating self
+        var self = id == -1;
+        if (!self && role < Role.Executive)
         {
           log.LogWarning($"[user] Unauthorized attempt by {email} to modify record {id}");
           return Response.Error<object>($"Unauthorized.", statusCode: HttpStatusCode.Unauthorized);
         }
 
         var validCols = new List<string> { "first_name", "last_name",
-          "email", "phone_1", "phone_2", "school", "role_id", "bio", "title", "show_exec" };
+          "phone_1", "phone_2", "school", "role_id", "bio", "title", "show_exec" };
+        // cannot update email from user profile page
+        if (!self) validCols.Add("email");
 
         // handle exec picture
         var pic = req.Form.Files.GetFile("pic");
@@ -212,11 +240,20 @@ namespace VP_Functions.API
           body.Add("pic", blob.Uri.ToString());
         }
 
+        // handle body
         var (userQuery, userParams) = FancyConn.MakeUpsertQuery("user", "user_id", id, validCols, body);
         if (!string.IsNullOrEmpty(userQuery))
         {
           var (err, newId) = await FancyConn.Shared.Scalar(userQuery, userParams);
           if (err) return Response.Error("Unable to update user.", FancyConn.Shared.lastError);
+        }
+
+        // handle mail list signups
+        var mailLists = body["mail_lists"]?.Value<JArray>();
+        if (mailLists != null && mailLists.Count > 0)
+        {
+          var (err, _) = await User.SetUserMailLists(id, mailLists);
+          if (err) return Response.Error("Unable to update mail list subscriptions.", FancyConn.Shared.lastError);
         }
 
         return Response.Ok("User updated successfully.");
@@ -230,6 +267,16 @@ namespace VP_Functions.API
         FancyConn.Shared.Dispose();
       }
     }
+
+    /// <summary>
+    /// Update the current user at a special endpoint (POST /me)
+    /// </summary>
+    [FunctionName("SetCurrentUser")]
+    public static async Task<IActionResult> SetCurrentUser(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "me")] HttpRequest req,
+      [Blob("website-upload/exec-photos", FileAccess.ReadWrite)] CloudBlobDirectory blobDirectory,
+      ClaimsPrincipal principal, ILogger log) =>
+      await SetUser(req, blobDirectory, principal, log, -1);
 
     /// <summary>
     /// Delete a user, including all related data
@@ -269,6 +316,55 @@ namespace VP_Functions.API
       {
         FancyConn.Shared.Dispose();
       }
+    }
+
+    public static Task<(bool, SqlDataReader)> GetUserMailLists(int id)
+    {
+      FancyConn.EnsureShared();
+      return FancyConn.Shared.Reader(@"SELECT
+        m.[mail_list_id] as [mail_list_id],
+        m.[display_name] as [display_name],
+        m.[description] as [description],
+        NOT ISNULL(uml.[user_mail_list_id]) [subscribed]
+      FROM [user] u
+      JOIN [mail_list] m
+      LEFT JOIN [user_mail_list] uml ON uml.[user_id] = u.[user_id] AND uml.[mail_list_id] = m.[mail_list_id]
+      WHERE u.user_id = @id", new Dictionary<string, object>() { { "id", id } });
+    }
+
+    public static Task<(bool, int)> SetUserMailLists(int userId, JArray lists)
+    {
+      FancyConn.EnsureShared();
+      var i = 0;
+      var queryParams = new Dictionary<string, object>() { { "id", userId } };
+      var toDelete = new List<string>();
+      var query = new StringBuilder();
+
+      foreach (var list in lists)
+      {
+        var id = list["mail_list_id"].Value<int>();
+        if (list["subscribed"].Value<bool>())
+        {
+          // wacky query to ensure that we don't get a bunch of duplicate key errors
+          query.AppendLine($@"BEGIN TRY
+            INSERT INTO [user_mail_list]([user_id], [mail_list_id]) VALUES (@id, @p{i})
+          END TRY
+          BEGIN CATCH
+            IF ERROR_NUMBER() != 2627 THROW -- a unique key constraint violation
+          END CATCH;");
+          queryParams.Add($"p{i.ToString()}", id);
+          i++;
+        }
+        else
+        {
+          toDelete.Add($"p{i.ToString()}");
+          queryParams.Add($"p{i.ToString()}", id);
+          i++;
+        }
+      }
+      query.AppendLine($"DELETE FROM [user_mail_list] WHERE [user_id] = @id AND [mail_list_id] IN ({string.Join(", ", toDelete)});");
+
+      return FancyConn.Shared.NonQuery(query.ToString(), queryParams);
     }
   }
 }
