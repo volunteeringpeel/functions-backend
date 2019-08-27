@@ -221,5 +221,56 @@ namespace VP_Functions.API
         FancyConn.Shared.Dispose();
       }
     }
+
+    /// <summary>
+    /// Set an event as archived or unarchived.
+    /// GET /archive-event/10 to archive event #10
+    /// GET /archive-event/10?unachive to unarchive event #10
+    /// </summary>
+    /// <param name="id">ID of event to (un)archive</param>
+    [FunctionName("ArchiveEvent")]
+    public static async Task<IActionResult> ArchiveEvent(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "archive-event/{id:int}")] HttpRequest req,
+      ClaimsPrincipal principal, ILogger log, int id)
+    {
+      string email = principal?.FindFirst(ClaimTypes.Email)?.Value;
+      if (email == null)
+        return Response.BadRequest("Not logged in.");
+      FancyConn.EnsureShared();
+
+      try
+      {
+        var role = await FancyConn.Shared.GetRole(email);
+        if (role < Role.Executive)
+        {
+          log.LogWarning($"[event] Unauthorized attempt by {email} to edit record {id}'s archival status.");
+          return Response.Error<JToken>($"Unauthorized.", statusCode: HttpStatusCode.Unauthorized);
+        }
+
+        string unarchive = req.Query["unarchive"];
+        if (unarchive == null)
+        {
+          var (err, _) = await FancyConn.Shared.NonQuery("UPDATE [event] SET [archived] = 1 WHERE [event_id] = @id",
+            new Dictionary<string, object>() { { "id", id } });
+          if (err) return Response.Error("Unable to archive event.", FancyConn.Shared.lastError);
+          return Response.Ok("Archived event successfully.");
+        }
+        else
+        {
+          var (err, _) = await FancyConn.Shared.NonQuery("UPDATE [event] SET [archived] = 0 WHERE [event_id] = @id",
+            new Dictionary<string, object>() { { "id", id } });
+          if (err) return Response.Error("Unable to unarchive event.", FancyConn.Shared.lastError);
+          return Response.Ok("Unarchived event successfully.");
+        }
+      }
+      catch (Exception e)
+      {
+        return Response.Error(data: e);
+      }
+      finally
+      {
+        FancyConn.Shared.Dispose();
+      }
+    }
   }
 }
