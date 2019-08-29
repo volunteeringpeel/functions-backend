@@ -191,7 +191,7 @@ namespace VP_Functions.API
     /// </summary>
     /// <param name="email">Email of user to lookup</param>
     /// <returns><see cref="Role"/> if user exists, <see langword="null"/> otherwise</returns>
-    public async Task<Role?> GetRole(string email)
+    public async Task<Role> GetRole(string email)
     {
       // get role from database
       var (_, role) = await this.Scalar("SELECT TOP 1 [role_id] FROM [user] WHERE [email] = @email",
