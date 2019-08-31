@@ -129,17 +129,18 @@ namespace VP_Functions.API
     /// </summary>
     /// <param name="query">SQL query to execute</param>
     /// <param name="queryParams">SQL parameters in key-value format</param>
-    public async Task<(bool err, object val)> Scalar(string query, Dictionary<string, object> queryParams)
+    public async Task<(bool err, object val)> Scalar(string query, Dictionary<string, object> queryParams = null)
     {
       SqlCommand cmd = null;
       try
       {
         cmd = this.MakeCommand(query);
-        foreach (var kv in queryParams)
-        {
-          var value = kv.Value ?? DBNull.Value;
-          cmd.Parameters.AddWithValue(kv.Key, value);
-        }
+        if (queryParams != null)
+          foreach (var kv in queryParams)
+          {
+            var value = kv.Value ?? DBNull.Value;
+            cmd.Parameters.AddWithValue(kv.Key, value);
+          }
         var val = await cmd.ExecuteScalarAsync();
         return (false, val);
       }
