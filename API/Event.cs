@@ -1,20 +1,15 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.WindowsAzure.Storage.Blob;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Security.Claims;
-using System.Text;
 using System.Threading.Tasks;
-using VP_Functions.Models;
+using VP_Functions.Helpers;
 
 namespace VP_Functions.API
 {
@@ -27,199 +22,136 @@ namespace VP_Functions.API
     /// - "nonarchived" (private) for all events which are not archived
     /// - "all" (private) for all events
     /// </summary>
-    [FunctionName("GetAllEvents")]
-    public static async Task<IActionResult> GetAllEvents(
-      [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "events")] HttpRequest req,
-      ClaimsPrincipal principal, ILogger log)
+    public static async Task<IActionResult> GetAll(HttpRequest req, ILogger log)
     {
-      IDictionary<string, string> queryParams = req.GetQueryParameterDictionary();
+      var queryParams = req.GetQueryParameterDictionary();
       var filter = queryParams.ContainsKey("filter") ? queryParams["filter"] : "active";
       if (filter != "active" && filter != "nonarchived" && filter != "all")
         return Response.BadRequest("Bad query parameter filter.");
-      FancyConn.EnsureShared();
-
-      try
+      // authorization enforcement
+      if (filter != "active")
       {
-        // authorization enforcement
-        if (filter != "active")
+        var email = req.HttpContext.User?.FindFirst(ClaimTypes.Email)?.Value;
+        var role = await FancyConn.Shared.GetRole(email);
+        if (role < Role.Executive)
         {
-          var role = await FancyConn.Shared.GetRole(principal?.FindFirst(ClaimTypes.Email)?.Value);
-          if (role < Role.Executive)
-            return Response.Error<object>("Unauthorized.", statusCode: HttpStatusCode.Unauthorized);
+          log.LogWarning($"Unauthorized access by {email} to {req.Path}");
+          return Response.Error<object>($"Unauthorized.", statusCode: HttpStatusCode.Unauthorized);
         }
-
-        var data = new JArray();
-        var cols = new List<string>() { "event_id", "name", "address", "transport", "description", "add_info" };
-
-        // set filters
-        var where = " WHERE [active] = 1";
-        if (filter == "all") where = "";
-        if (filter == "nonarchived") where = " WHERE [archived] = 0";
-        // get active/archived data if private endpoint
-        if (filter != "current") cols.AddRange(new string[] { "active", "archived" });
-
-        // get events
-        var (err, reader) = await FancyConn.Shared.Reader($"SELECT [{string.Join("], [", cols)}] FROM [event]" + where);
-        if (err) Response.Error("Unable to retrieve events.", FancyConn.Shared.lastError);
-        while (reader.Read())
-        {
-          var ev = new JObject(
-            from col in cols
-            select new JProperty(col, reader[col]));
-          ev.Add("shifts", new JArray());
-          data.Add(ev);
-        }
-        reader.Close();
-
-        // get shifts
-        var shiftCols = new List<string>() { "shift_id", "event_id", "shift_num", "start_time", "end_time", "meals", "spots_taken", "max_spots", "notes" };
-        if (filter != "current") shiftCols.AddRange(new string[] { "active", "archived" });
-
-        (err, reader) = await FancyConn.Shared.Reader($"SELECT [{string.Join("], [", shiftCols)}] FROM [vw_shift]" + where);
-        if (err) return Response.Error($"Unable to retrieve shifts.", FancyConn.Shared.lastError);
-        while (reader.Read())
-        {
-          var ev = data.SelectToken($"$[?(@.event_id == {reader["event_id"]})]");
-          ev["shifts"].Value<JArray>().Add(new JObject(
-            from col in shiftCols
-            select new JProperty(col, reader[col])));
-        }
-
-        return Response.Ok("Retrieved events successfully.", data);
       }
-      catch (Exception e)
+
+      var data = new JArray();
+      var cols = new List<string>() { "event_id", "name", "address", "transport", "description", "add_info" };
+
+      // set filters
+      var where = " WHERE [active] = 1";
+      if (filter == "all") where = "";
+      if (filter == "nonarchived") where = " WHERE [archived] = 0";
+      // get active/archived data if private endpoint
+      if (filter != "current") cols.AddRange(new string[] { "active", "archived" });
+
+      // get events
+      var (err, reader) = await FancyConn.Shared.Reader($"SELECT [{string.Join("], [", cols)}] FROM [event]" + where);
+      if (err) Response.Error("Unable to retrieve events.", FancyConn.Shared.lastError);
+      while (reader.Read())
       {
-        return Response.Error(data: e);
+        var ev = new JObject(
+          from col in cols
+          select new JProperty(col, reader[col]))
+        {
+          { "shifts", new JArray() }
+        };
+        data.Add(ev);
       }
-      finally
+      reader.Close();
+
+      // get shifts
+      var shiftCols = new List<string>() { "shift_id", "event_id", "shift_num", "start_time", "end_time", "meals", "spots_taken", "max_spots", "notes" };
+      if (filter != "current") shiftCols.AddRange(new string[] { "active", "archived" });
+
+      (err, reader) = await FancyConn.Shared.Reader($"SELECT [{string.Join("], [", shiftCols)}] FROM [vw_shift]" + where);
+      if (err) return Response.Error($"Unable to retrieve shifts.", FancyConn.Shared.lastError);
+      while (reader.Read())
       {
-        FancyConn.Shared.Dispose();
+        var ev = data.SelectToken($"$[?(@.event_id == {reader["event_id"]})]");
+        ev["shifts"].Value<JArray>().Add(new JObject(
+          from col in shiftCols
+          select new JProperty(col, reader[col])));
       }
+
+      return Response.Ok("Retrieved events successfully.", data);
     }
 
     /// <summary>
     /// Update or create an event, along with its shifts.
     /// </summary>
     /// <param name="id">ID of event to update, -1 to create</param>
-    [FunctionName("SetEvent")]
-    public static async Task<IActionResult> SetEvent(
-      [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "event/{id:int}")] HttpRequest req,
-      [Blob("website-upload/hours-letters", FileAccess.ReadWrite)] CloudBlobDirectory blobDirectory,
-      ClaimsPrincipal principal, ILogger log, int id)
+    public static async Task<IActionResult> Update(
+      HttpRequest req, ClaimsPrincipal principal, ILogger log, CloudBlobDirectory blobDirectory, int id)
     {
-      string email = principal?.FindFirst(ClaimTypes.Email)?.Value;
-      if (email == null)
-        return Response.BadRequest("Not logged in.");
       var body = await req.GetBodyParameters();
       var deleteShifts = body["deleteShifts"]?.Value<JArray>().Select(s => (int)s);
       var shifts = body["shifts"]?.Values<JObject>();
+      var eventCols = new List<string> { "name", "description", "transport", "address", "add_info" };
 
-      FancyConn.EnsureShared();
-
-      try
+      // handle hours letter
+      var letter = req.Form.Files.GetFile("letter");
+      if (letter != null)
       {
-        var role = await FancyConn.Shared.GetRole(email);
-        if (role < Role.Executive)
-        {
-          log.LogWarning($"[event] Unauthorized attempt by {email} to edit record {id}");
-          return Response.Error<JToken>($"Unauthorized.", statusCode: HttpStatusCode.Unauthorized);
-        }
-
-        var eventCols = new List<string> { "name", "description", "transport", "address", "add_info" };
-
-        // handle hours letter
-        var letter = req.Form.Files.GetFile("letter");
-        if (letter != null)
-        {
-          var blob = blobDirectory.GetBlockBlobReference(letter.FileName.WithTimestamp());
-          await blob.UploadFromStreamAsync(letter.OpenReadStream());
-          eventCols.Add("letter");
-          body.Add("letter", blob.Uri.ToString());
-        }
-
-        object newId = null;
-        var (eventQuery, eventParams) = FancyConn.MakeUpsertQuery("event", "event_id", id, eventCols, body);
-        if (!string.IsNullOrEmpty(eventQuery))
-        {
-          var err = false;
-          (err, newId) = await FancyConn.Shared.Scalar(eventQuery, eventParams);
-          if (err) return Response.Error("Unable to update event.", FancyConn.Shared.lastError);
-        }
-
-        // handle deletion of shifts
-        if (deleteShifts.Count() > 0)
-        {
-          var delQuery = $"DELETE FROM [shifts] WHERE [shift_id] IN ({string.Join(", ", deleteShifts.Map(x => $"@{x}"))})";
-          var delParams = deleteShifts.ToDictionary(x => $"p{x}", x => (object)x);
-          var (err, _) = await FancyConn.Shared.NonQuery(delQuery, delParams);
-          if (err) return Response.Error("Unable to delete shifts.", FancyConn.Shared.lastError);
-        }
-
-        // handle shift updates
-        if (shifts.Count() > 0)
-        {
-          var errors = await Task.WhenAll(shifts.Select<JObject, Task<int?>>(async s =>
-          {
-            var shiftCols = new string[] { "event_id", "shift_num", "max_spots", "start_time", "end_time", "meals", "notes" }.ToList();
-            s["event_id"] = new JValue(newId ?? id);
-            var (shiftQuery, shiftParams) = FancyConn.MakeUpsertQuery("shift", "shift_id", (int)s["shift_id"], shiftCols, s);
-            var (error, _) = await FancyConn.Shared.NonQuery(shiftQuery, shiftParams);
-            if (error) return (int)s["shift_num"];
-            return null;
-          }));
-          var failed = string.Join(", ", errors.Where(x => x != null).ToList());
-          if (failed.Length > 0) return Response.Error($"Unable to update shift {failed}", FancyConn.Shared.lastError);
-        }
-
-        return Response.Ok("Updated event successfully.");
+        var blob = blobDirectory.GetBlockBlobReference(letter.FileName.WithTimestamp());
+        await blob.UploadFromStreamAsync(letter.OpenReadStream());
+        eventCols.Add("letter");
+        body.Add("letter", blob.Uri.ToString());
       }
-      catch (Exception e)
+
+      object newId = null;
+      var (eventQuery, eventParams) = FancyConn.MakeUpsertQuery("event", "event_id", id, eventCols, body);
+      if (!string.IsNullOrEmpty(eventQuery))
       {
-        return Response.Error(data: e);
+        var err = false;
+        (err, newId) = await FancyConn.Shared.Scalar(eventQuery, eventParams);
+        if (err) return Response.Error("Unable to update event.", FancyConn.Shared.lastError);
       }
-      finally
+
+      // handle deletion of shifts
+      if (deleteShifts.Count() > 0)
       {
-        FancyConn.Shared.Dispose();
+        var delQuery = $"DELETE FROM [shifts] WHERE [shift_id] IN ({string.Join(", ", deleteShifts.Map(x => $"@{x}"))})";
+        var delParams = deleteShifts.ToDictionary(x => $"p{x}", x => (object)x);
+        var (err, _) = await FancyConn.Shared.NonQuery(delQuery, delParams);
+        if (err) return Response.Error("Unable to delete shifts.", FancyConn.Shared.lastError);
       }
+
+      // handle shift updates
+      if (shifts.Count() > 0)
+      {
+        var errors = await Task.WhenAll(shifts.Select<JObject, Task<int?>>(async s =>
+        {
+          var shiftCols = new string[] { "event_id", "shift_num", "max_spots", "start_time", "end_time", "meals", "notes" }.ToList();
+          s["event_id"] = new JValue(newId ?? id);
+          var (shiftQuery, shiftParams) = FancyConn.MakeUpsertQuery("shift", "shift_id", (int)s["shift_id"], shiftCols, s);
+          var (error, _) = await FancyConn.Shared.NonQuery(shiftQuery, shiftParams);
+          if (error) return (int)s["shift_num"];
+          return null;
+        }));
+        var failed = string.Join(", ", errors.Where(x => x != null).ToList());
+        if (failed.Length > 0) return Response.Error($"Unable to update shift {failed}", FancyConn.Shared.lastError);
+      }
+
+      return Response.Ok("Updated event successfully.");
     }
 
     /// <summary>
     /// Delete an event, including all shifts
     /// </summary>
     /// <param name="id">ID of event to delete</param>
-    [FunctionName("DeleteEvent")]
-    public static async Task<IActionResult> DeleteEvent(
-      [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "event/{id:int}")] HttpRequest req,
-      ClaimsPrincipal principal, ILogger log, int id)
+    public static async Task<IActionResult> Delete(HttpRequest req, ClaimsPrincipal principal, ILogger log, int id)
     {
-      string email = principal?.FindFirst(ClaimTypes.Email)?.Value;
-      if (email == null)
-        return Response.BadRequest("Not logged in.");
-      FancyConn.EnsureShared();
+      var (err, _) = await FancyConn.Shared.NonQuery("DELETE FROM [event] WHERE [event_id] = @id",
+        new Dictionary<string, object>() { { "id", id } });
+      if (err) return Response.Error("Unable to delete event", FancyConn.Shared.lastError);
 
-      try
-      {
-        var role = await FancyConn.Shared.GetRole(email);
-        if (role < Role.Executive)
-        {
-          log.LogWarning($"[event] Unauthorized attempt by {email} to delete record {id}");
-          return Response.Error<JToken>($"Unauthorized.", statusCode: HttpStatusCode.Unauthorized);
-        }
-
-        var (err, _) = await FancyConn.Shared.NonQuery("DELETE FROM [event] WHERE [event_id] = @id",
-          new Dictionary<string, object>() { { "id", id } });
-        if (err) return Response.Error("Unable to delete event", FancyConn.Shared.lastError);
-
-        return Response.Ok("Deleted event successfully.");
-      }
-      catch (Exception e)
-      {
-        return Response.Error(data: e);
-      }
-      finally
-      {
-        FancyConn.Shared.Dispose();
-      }
+      return Response.Ok("Deleted event successfully.");
     }
 
     /// <summary>
@@ -228,48 +160,22 @@ namespace VP_Functions.API
     /// GET /archive-event/10?unachive to unarchive event #10
     /// </summary>
     /// <param name="id">ID of event to (un)archive</param>
-    [FunctionName("ArchiveEvent")]
-    public static async Task<IActionResult> ArchiveEvent(
-      [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "archive-event/{id:int}")] HttpRequest req,
-      ClaimsPrincipal principal, ILogger log, int id)
+    public static async Task<IActionResult> Archive(HttpRequest req, ClaimsPrincipal principal, ILogger log, int id)
     {
-      string email = principal?.FindFirst(ClaimTypes.Email)?.Value;
-      if (email == null)
-        return Response.BadRequest("Not logged in.");
-      FancyConn.EnsureShared();
-
-      try
+      string unarchive = req.Query["unarchive"];
+      if (unarchive == null)
       {
-        var role = await FancyConn.Shared.GetRole(email);
-        if (role < Role.Executive)
-        {
-          log.LogWarning($"[event] Unauthorized attempt by {email} to edit record {id}'s archival status.");
-          return Response.Error<JToken>($"Unauthorized.", statusCode: HttpStatusCode.Unauthorized);
-        }
-
-        string unarchive = req.Query["unarchive"];
-        if (unarchive == null)
-        {
-          var (err, _) = await FancyConn.Shared.NonQuery("UPDATE [event] SET [archived] = 1 WHERE [event_id] = @id",
-            new Dictionary<string, object>() { { "id", id } });
-          if (err) return Response.Error("Unable to archive event.", FancyConn.Shared.lastError);
-          return Response.Ok("Archived event successfully.");
-        }
-        else
-        {
-          var (err, _) = await FancyConn.Shared.NonQuery("UPDATE [event] SET [archived] = 0 WHERE [event_id] = @id",
-            new Dictionary<string, object>() { { "id", id } });
-          if (err) return Response.Error("Unable to unarchive event.", FancyConn.Shared.lastError);
-          return Response.Ok("Unarchived event successfully.");
-        }
+        var (err, _) = await FancyConn.Shared.NonQuery("UPDATE [event] SET [archived] = 1 WHERE [event_id] = @id",
+          new Dictionary<string, object>() { { "id", id } });
+        if (err) return Response.Error("Unable to archive event.", FancyConn.Shared.lastError);
+        return Response.Ok("Archived event successfully.");
       }
-      catch (Exception e)
+      else
       {
-        return Response.Error(data: e);
-      }
-      finally
-      {
-        FancyConn.Shared.Dispose();
+        var (err, _) = await FancyConn.Shared.NonQuery("UPDATE [event] SET [archived] = 0 WHERE [event_id] = @id",
+          new Dictionary<string, object>() { { "id", id } });
+        if (err) return Response.Error("Unable to unarchive event.", FancyConn.Shared.lastError);
+        return Response.Ok("Unarchived event successfully.");
       }
     }
   }

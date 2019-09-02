@@ -1,10 +1,10 @@
-﻿using System;
+﻿using Newtonsoft.Json.Linq;
+using System;
 using System.Data;
 using System.Data.SqlClient;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using VP_Functions.Models;
-using Newtonsoft.Json.Linq;
+using VP_Functions.Helpers;
 
 namespace VP_Functions.API
 {
@@ -164,7 +164,6 @@ namespace VP_Functions.API
     public async Task<(bool err, int rows)> NonQuery(string query, Dictionary<string, object> queryParams = null)
     {
       SqlCommand cmd = null;
-      int rows = -1;
       try
       {
         cmd = this.MakeCommand(query);
@@ -173,7 +172,7 @@ namespace VP_Functions.API
           var value = kv.Value ?? DBNull.Value;
           cmd.Parameters.AddWithValue(kv.Key, value);
         }
-        rows = await cmd.ExecuteNonQueryAsync();
+        var rows = await cmd.ExecuteNonQueryAsync();
         return (false, rows);
       }
       catch (SqlException e)

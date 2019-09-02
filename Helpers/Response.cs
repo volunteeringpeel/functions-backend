@@ -1,8 +1,9 @@
-﻿using System.Net;
+﻿using System;
+using System.Net;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json.Linq;
 
-namespace VP_Functions.Models
+namespace VP_Functions.Helpers
 {
   public class Response
   {
@@ -47,6 +48,7 @@ namespace VP_Functions.Models
     public static ObjectResult Error<T>(string message = "Internal server error.", T data = null,
       HttpStatusCode statusCode = HttpStatusCode.InternalServerError) where T : class
     {
+      var msg = $"{message} Please record the following timestamp: {DateTime.Now.ToString("yyyyMMddHHmmssfff")}";
       var res = new Response(statusCode, message, data);
       var obj = new ObjectResult(res);
       obj.StatusCode = (int)statusCode;
