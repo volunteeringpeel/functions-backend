@@ -59,11 +59,7 @@ namespace VP_Functions.API
     {
       var (err, reader) = await FancyConn.Shared.Reader("SELECT [header_id], [link] FROM [header]");
       if (err) return Response.Error("Unable to get headers.", FancyConn.Shared.lastError);
-      var headers = new JArray();
-      var schema = reader.GetColumnSchema();
-      while (reader.Read())
-        headers.Add(new JObject(from c in schema
-                                select new JProperty(c.ColumnName, reader[(int)c.ColumnOrdinal])));
+      var headers = reader.ToJArray();
 
       return Response.Ok("Got headers successfully.", headers);
     }

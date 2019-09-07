@@ -43,7 +43,7 @@ namespace VP_Functions.API
 
         bool created = false;
         // use role check to see if user exists already
-        if (role != Role.None || type == ReqType.New)
+        if (role == Role.None || type == ReqType.New)
         {
           var newData = new Dictionary<string, object>()
           {
@@ -99,21 +99,21 @@ namespace VP_Functions.API
         while (reader.Read())
         {
           var us = new JObject(
-            new JProperty("user_shift_id", reader.GetInt32(0)),
-            new JProperty("hours", reader.GetString(1)),
+            new JProperty("user_shift_id", reader[0]),
+            new JProperty("hours", reader[1]),
             new JProperty("confirm_level", new JObject(
-              new JProperty("id", reader.GetInt32(2)),
-              new JProperty("name", reader.GetString(3)),
-              new JProperty("description", reader.GetString(4)))),
-            new JProperty("letter", reader.GetString(5)),
+              new JProperty("id", reader[2]),
+              new JProperty("name", reader[3]),
+              new JProperty("description", reader[4]))),
+            new JProperty("letter", reader[5]),
             new JProperty("shift", new JObject(
-              new JProperty("shift_id", reader.GetInt32(6)),
-              new JProperty("shift_num", reader.GetInt32(7)),
-              new JProperty("start_time", reader.GetString(8)),
-              new JProperty("end_time", reader.GetString(9)))),
+              new JProperty("shift_id", reader[6]),
+              new JProperty("shift_num", reader[7]),
+              new JProperty("start_time", reader[8]),
+              new JProperty("end_time", reader[9]))),
             new JProperty("parentEvent", new JObject(
-              new JProperty("event_id", reader.GetString(10)),
-              new JProperty("name", reader.GetString(11)))));
+              new JProperty("event_id", reader[10]),
+              new JProperty("name", reader[11]))));
           userShifts.Add(us);
         }
         reader.Close();
@@ -121,14 +121,14 @@ namespace VP_Functions.API
         // get mail list subscriptions
         (err, reader) = await FancyConn.Shared.Reader(
           @"SELECT
-            m.[mail_list_id] as [mail_list_id],
-            m.[display_name] as [display_name],
-            m.[description] as [description],
-            NOT ISNULL(uml.[user_mail_list_id]) [subscribed]
+            m.[mail_list_id] AS [mail_list_id],
+            m.[display_name] AS [display_name],
+            m.[description] AS [description],
+            (CASE WHEN uml.user_mail_list_id IS NULL THEN 0 ELSE 1 END) AS subscribed
           FROM [user] u
-          JOIN [mail_list] m
-          LEFT JOIN [user_mail_list] uml ON uml.[user_id] = u.[user_id] AND uml.[mail_list_id] = m.[mail_list_id]
-          WHERE u.user_id = @id",
+            CROSS JOIN [mail_list] m
+            LEFT JOIN [user_mail_list] uml ON uml.[user_id] = u.[user_id] AND uml.mail_list_id = m.mail_list_id
+          WHERE u.[user_id] = @id",
           new Dictionary<string, object>() { { "id", (int)user["user_id"] } });
         if (err) return Response.Error("Unable to get mail list subscriptions.", FancyConn.Shared.lastError);
 

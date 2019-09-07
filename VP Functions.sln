@@ -5,7 +5,7 @@ VisualStudioVersion = 16.0.29209.62
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VP Functions", "VP Functions.csproj", "{0066EB88-FA29-437F-A91B-B41AB30B1D48}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VP Functions Test", "Test\VP Functions Test.csproj", "{DFF6CBF0-2554-4CD7-822C-BBB7AF086977}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VP Functions Test", "Test\VP Functions Test.csproj", "{DFF6CBF0-2554-4CD7-822C-BBB7AF086977}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

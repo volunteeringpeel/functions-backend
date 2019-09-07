@@ -3,6 +3,7 @@ using Microsoft.Extensions.Primitives;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
+using System.Data.SqlClient;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -62,6 +63,21 @@ namespace VP_Functions
         }
         return data;
       }
+    }
+
+    /// <summary>
+    /// Create a <see cref="JArray"/> from a <see cref="SqlDataReader"/>
+    /// </summary>
+    /// <param name="reader">Reader to convert</param>
+    /// <returns>Array with column names as properties and data as values</returns>
+    public static JArray ToJArray(this SqlDataReader reader)
+    {
+      var data = new JArray();
+      var schema = reader.GetColumnSchema();
+      while (reader.Read())
+        data.Add(new JObject(from c in schema
+                                select new JProperty(c.ColumnName, reader[(int)c.ColumnOrdinal])));
+      return data;
     }
 
     public static string WithTimestamp(this string fn) =>

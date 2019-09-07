@@ -20,12 +20,12 @@ namespace VP_Functions.API
     // EVENT ENDPOINTS
     // ===============
     [FunctionName("GetAllEvents")]
-    public static async Task<IActionResult> GetAll(
+    public static async Task<IActionResult> GetAllEvents(
       [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "events")] HttpRequest req, ILogger log) =>
       await Method.IsUnauthenticated(Event.GetAll, req, log);
     [FunctionName("UpdateEvent")]
     public static async Task<IActionResult> UpdateEvent(
-      [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "event/{id:int}")] HttpRequest req,
+      [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "event/{id:int}")] HttpRequest req,
       ClaimsPrincipal principal, ILogger log,
       [Blob("website-upload/hours-letters", FileAccess.ReadWrite)] CloudBlobDirectory blobDirectory, int id) =>
       await Method.IsAuthenticated(Event.Update, req, principal, log, blobDirectory, id);
@@ -36,7 +36,7 @@ namespace VP_Functions.API
       await Method.IsAuthenticated(Event.Delete, req, principal, log, id);
     [FunctionName("ArchiveEvent")]
     public static async Task<IActionResult> ArchiveEvent(
-      [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "archive-event/{id:int}")] HttpRequest req,
+      [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "archive-event/{id:int}")] HttpRequest req,
       ClaimsPrincipal principal, ILogger log, int id)
       => await Method.IsAuthenticated(Event.Archive, req, principal, log, id);
 
@@ -69,13 +69,13 @@ namespace VP_Functions.API
     // ==============
     [FunctionName("CreateUser")]
     public static async Task<IActionResult> CreateUser(
-      [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "user")] HttpRequest req,
+      [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "user")] HttpRequest req,
       [Blob("website-upload/exec-photos", FileAccess.ReadWrite)] CloudBlobDirectory blobDirectory,
       ClaimsPrincipal principal, ILogger log)
       => await User.CreateOrUpdate(req, blobDirectory, principal, log, ReqType.New);
     [FunctionName("CreateOrUpdateUserByID")]
-    public static async Task<IActionResult> UpdateUserByID(
-      [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "user/{id:int}")] HttpRequest req,
+    public static async Task<IActionResult> CreateOrUpdateUserByID(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "user/{id:int}")] HttpRequest req,
       [Blob("website-upload/exec-photos", FileAccess.ReadWrite)] CloudBlobDirectory blobDirectory,
       ClaimsPrincipal principal, ILogger log, int id)
       => await User.CreateOrUpdate(req, blobDirectory, principal, log, (id == -1) ? ReqType.New : ReqType.ID, id);
@@ -97,7 +97,7 @@ namespace VP_Functions.API
       => await Method.IsAuthenticated(User.Get, req, principal, log, ReqType.Current, -1);
     [FunctionName("UpdateCurrentUser")]
     public static async Task<IActionResult> UpdateCurrentUser(
-      [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "me")] HttpRequest req,
+      [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "me")] HttpRequest req,
       [Blob("website-upload/exec-photos", FileAccess.ReadWrite)] CloudBlobDirectory blobDirectory,
       ClaimsPrincipal principal, ILogger log)
       => await User.CreateOrUpdate(req, blobDirectory, principal, log, ReqType.Current);
@@ -105,8 +105,8 @@ namespace VP_Functions.API
     // =======================
     // MISCELLANEOUS ENDPOINTS
     // =======================
-    [FunctionName("Signup")]
-    public static async Task<IActionResult> RunSignup(
+    [FunctionName("CreateSignup")]
+    public static async Task<IActionResult> CreateSignup(
       [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "signup")] HttpRequest req,
       ClaimsPrincipal principal, ILogger log) => await Method.IsAuthenticated(Signup.Run, req, principal, log);
   }
