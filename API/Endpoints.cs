@@ -37,8 +37,31 @@ namespace VP_Functions.API
     [FunctionName("ArchiveEvent")]
     public static async Task<IActionResult> ArchiveEvent(
       [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "archive-event/{id:int}")] HttpRequest req,
-      ClaimsPrincipal principal, ILogger log, int id)
-      => await Method.IsAuthenticated(Event.Archive, req, principal, log, id);
+      ClaimsPrincipal principal, ILogger log, int id) =>
+      await Method.IsAuthenticated(Event.Archive, req, principal, log, id);
+
+    // =============
+    // FAQ ENDPOINTS
+    // =============
+    [FunctionName("GetAllFAQs")]
+    public static async Task<IActionResult> GetAllFAQs(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "faq")] HttpRequest req, ILogger log) =>
+      await Method.IsUnauthenticated(FAQ.GetAll, req, log);
+    [FunctionName("CreateFAQ")]
+    public static async Task<IActionResult> CreateFAQ(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "faq")] HttpRequest req,
+      ClaimsPrincipal principal, ILogger log) =>
+      await Method.IsAuthenticated(FAQ.CreateOrUpdate, req, principal, log, -1);
+    [FunctionName("UpdateFAQ")]
+    public static async Task<IActionResult> UpdateFAQ(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "faq/{id:int}")] HttpRequest req,
+      ClaimsPrincipal principal, ILogger log, int id) =>
+      await Method.IsAuthenticated(FAQ.CreateOrUpdate, req, principal, log, id);
+    [FunctionName("DeleteFAQ")]
+    public static async Task<IActionResult> DeleteFAQ(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "faq/{id:int}")] HttpRequest req,
+      ClaimsPrincipal principal, ILogger log, int id) =>
+      await Method.IsAuthenticated(FAQ.Delete, req, principal, log, id);
 
     // ================
     // HEADER ENDPOINTS
