@@ -84,9 +84,38 @@ namespace VP_Functions.API
       [Blob("website-upload/header-images", FileAccess.Write)] CloudBlobDirectory blobDirectory, int id) =>
       await Method.IsAuthenticated(Header.Delete, req, principal, log, blobDirectory, id);
 
-    // =============
-    // FAQ ENDPOINTS
-    // =============
+
+    // ===================
+    // MAIL LIST ENDPOINTS
+    // ===================
+    [FunctionName("GetAllMailLists")]
+    public static async Task<IActionResult> GetAllMailLists(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "mail-list")] HttpRequest req, ILogger log) =>
+      await Method.IsUnauthenticated(MailList.GetAll, req, log);
+    [FunctionName("CreateMailList")]
+    public static async Task<IActionResult> CreateMailList(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "mail-list")] HttpRequest req,
+      ClaimsPrincipal principal, ILogger log) =>
+      await Method.IsAuthenticated(MailList.CreateOrUpdate, req, principal, log, -1);
+    [FunctionName("UpdateMailList")]
+    public static async Task<IActionResult> UpdateMailList(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "mail-list/{id:int}")] HttpRequest req,
+      ClaimsPrincipal principal, ILogger log, int id) =>
+      await Method.IsAuthenticated(MailList.CreateOrUpdate, req, principal, log, id);
+    [FunctionName("DeleteMailList")]
+    public static async Task<IActionResult> DeleteMailList(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "mail-list/{id:int}")] HttpRequest req,
+      ClaimsPrincipal principal, ILogger log, int id) =>
+      await Method.IsAuthenticated(MailList.Delete, req, principal, log, id);
+    [FunctionName("MailListSignup")]
+    public static async Task<IActionResult> MailListSignup(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "mail-list/signup/{id:int}")] HttpRequest req,
+      ClaimsPrincipal principal, ILogger log, int id) =>
+      await Method.IsAuthenticated(MailList.Signup, req, principal, log, id);
+
+    // =================
+    // SPONSOR ENDPOINTS
+    // =================
     [FunctionName("GetAllSponsors")]
     public static async Task<IActionResult> GetAllSponsor(
       [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "sponsor")] HttpRequest req, ILogger log) =>
