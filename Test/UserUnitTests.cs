@@ -1,14 +1,11 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using FluentAssertions;
+﻿using FluentAssertions;
+using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.Net;
-using System.Text;
-using VP_Functions.Models;
+using Newtonsoft.Json.Linq;
+using VP_Functions.API;
+using VP_Functions.Helpers;
 using Xunit;
 using Xunit.Abstractions;
-using Newtonsoft.Json.Linq;
 
 namespace VP_Functions.Test
 {
@@ -20,7 +17,7 @@ namespace VP_Functions.Test
     public async void GetUser_should_be_authorized()
     {
       var req = new MockHttpContext().Request;
-      var result = (ObjectResult)await API.User.GetUser(req, null, log, 0);
+      var result = (ObjectResult)await User.Get(req, null, log, 0);
       output.WriteLine(JsonConvert.SerializeObject(result.Value));
       result.Value.As<Response>().message.Should().Be("Not logged in.");
       result.StatusCode.Should().Be(400);
@@ -32,7 +29,7 @@ namespace VP_Functions.Test
       var req = new MockHttpContext()
         .WithUser(this.volunteerUser)
         .Request;
-      var result = (ObjectResult)await API.User.GetUser(req, this.volunteerUser, log, 0);
+      var result = (ObjectResult)await User.Get(req, this.volunteerUser, log, 0);
       output.WriteLine(JsonConvert.SerializeObject(result.Value));
       result.Value.As<Response>().message.Should().Be("Unauthorized.");
       result.StatusCode.Should().Be(401);
@@ -44,7 +41,7 @@ namespace VP_Functions.Test
       var req = new MockHttpContext()
         .WithUser(this.systemUser)
         .Request;
-      var result = (ObjectResult)await API.User.GetUser(req, this.systemUser, log, 1);
+      var result = (ObjectResult)await User.Get(req, this.systemUser, log, 1);
       var response = result.Value.As<Response>();
       output.WriteLine(JsonConvert.SerializeObject(response));
       response.data["email"].Value<string>().Should().Be("test.volunteer@doesnotexist.volunteeringpeel.org");
@@ -58,7 +55,7 @@ namespace VP_Functions.Test
       var req = new MockHttpContext()
         .WithUser(this.systemUser)
         .Request;
-      var result = (ObjectResult)await API.User.GetCurrentUser(req, this.systemUser, log);
+      var result = (ObjectResult)await User.Get(req, this.systemUser, log, ReqType.Current);
       var response = result.Value.As<Response>();
       output.WriteLine(JsonConvert.SerializeObject(response));
       response.data["user"]["email"].Value<string>().Should().Be("system@doesnotexist.volunteeringpeel.org");
@@ -75,7 +72,7 @@ namespace VP_Functions.Test
           ""phone_1"":""5555555555""
         }")
         .Request;
-      var result = (ObjectResult)await API.User.SetUser(req, this.systemUser, log, 0);
+      var result = (ObjectResult)await User.CreateOrUpdate(req, null, this.systemUser, log, 0);
       output.WriteLine(JsonConvert.SerializeObject(result.Value));
       result.Value.As<Response>().message.Should().Be("User updated successfully.");
     }
@@ -89,7 +86,7 @@ namespace VP_Functions.Test
           ""a_fake_column"":""haha_im_haxor""
         }")
         .Request;
-      var result = (ObjectResult)await API.User.SetUser(req, this.systemUser, log, 0);
+      var result = (ObjectResult)await User.CreateOrUpdate(req, null, this.systemUser, log, 0);
       output.WriteLine(JsonConvert.SerializeObject(result.Value));
       result.Value.As<Response>().message.Should().Be("Passed unsupported column a_fake_column.");
     }
