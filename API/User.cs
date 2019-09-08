@@ -258,6 +258,21 @@ namespace VP_Functions.API
 
       return Response.Ok("Deleted user successfully.");
     }
+    
+    /// <summary>
+    /// Get a list of execs
+    /// </summary>
+    /// <returns></returns>
+    public static async Task<IActionResult> GetExecs()
+    {
+      var (err, reader) = await FancyConn.Shared.Reader(@"SELECT
+          [user_id], [first_name], [last_name], [title], [bio], [pic]
+        FROM [user] WHERE [role_id] = 3 AND [show_exec] = 1");
+      if (err) return Response.Error("Unable to get execs.", FancyConn.Shared.lastError);
+      var faqs = reader.ToJArray();
+
+      return Response.Ok("Got execs successfully.", faqs);
+    }
   }
 }
 
