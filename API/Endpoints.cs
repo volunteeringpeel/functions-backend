@@ -4,11 +4,8 @@ using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.WindowsAzure.Storage.Blob;
-using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Security.Claims;
-using System.Text;
 using System.Threading.Tasks;
 using VP_Functions.Helpers;
 
@@ -86,6 +83,29 @@ namespace VP_Functions.API
       ClaimsPrincipal principal, ILogger log,
       [Blob("website-upload/header-images", FileAccess.Write)] CloudBlobDirectory blobDirectory, int id) =>
       await Method.IsAuthenticated(Header.Delete, req, principal, log, blobDirectory, id);
+
+    // =============
+    // FAQ ENDPOINTS
+    // =============
+    [FunctionName("GetAllSponsors")]
+    public static async Task<IActionResult> GetAllSponsor(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "sponsor")] HttpRequest req, ILogger log) =>
+      await Method.IsUnauthenticated(FAQ.GetAll, req, log);
+    [FunctionName("CreateSponsor")]
+    public static async Task<IActionResult> CreateSponsor(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "sponsor")] HttpRequest req,
+      ClaimsPrincipal principal, ILogger log) =>
+      await Method.IsAuthenticated(FAQ.CreateOrUpdate, req, principal, log, -1);
+    [FunctionName("UpdateSponsor")]
+    public static async Task<IActionResult> UpdateSponsor(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "sponsor/{id:int}")] HttpRequest req,
+      ClaimsPrincipal principal, ILogger log, int id) =>
+      await Method.IsAuthenticated(FAQ.CreateOrUpdate, req, principal, log, id);
+    [FunctionName("DeleteSponsor")]
+    public static async Task<IActionResult> DeleteSponsor(
+      [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "sponsor/{id:int}")] HttpRequest req,
+      ClaimsPrincipal principal, ILogger log, int id) =>
+      await Method.IsAuthenticated(FAQ.Delete, req, principal, log, id);
 
     // ==============
     // USER ENDPOINTS

@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using VP_Functions.Helpers;
-using System.Security.Claims;
-using System.Collections.Generic;
 
 namespace VP_Functions.API
 {
@@ -16,7 +16,7 @@ namespace VP_Functions.API
     /// <returns>List of FAQs</returns>
     public static async Task<IActionResult> GetAll()
     {
-      var (err, reader) = await FancyConn.Shared.Reader("SELECT [faq_id], [question], [answer] FROM [faq]");
+      var (err, reader) = await FancyConn.Shared.Reader("SELECT [faq_id], [question], [answer] FROM [faq] ORDER BY [priority]");
       if (err) return Response.Error("Unable to get FAQs.", FancyConn.Shared.lastError);
       var faqs = reader.ToJArray();
 
@@ -37,11 +37,15 @@ namespace VP_Functions.API
       return Response.Ok($"{(newId == null ? "Updated" : "Created")} FAQ successfully.");
     }
 
+    /// <summary>
+    /// Delete an FAQ by ID
+    /// </summary>
+    /// <param name="id">ID of FAQ to delete</param>
     public static async Task<IActionResult> Delete(HttpRequest req, ClaimsPrincipal principal, ILogger log, int id)
     {
       var (err, rows) = await FancyConn.Shared.NonQuery("DELETE FROM [faq] WHERE [faq_id] = @id",
         new Dictionary<string, object>() { { "id", id } });
-      if (err || rows != 1) return Response.Error("Unable to get FAQs.", FancyConn.Shared.lastError);
+      if (err || rows != 1) return Response.Error("Unable to delete FAQ.", FancyConn.Shared.lastError);
 
       return Response.Ok("Deleted FAQ successfully.");
     }
