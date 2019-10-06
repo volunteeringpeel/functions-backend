@@ -18,7 +18,7 @@ namespace VP_Functions.API
     // ===============
     [FunctionName("GetAllEvents")]
     public static async Task<IActionResult> GetAllEvents(
-      [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "events")] HttpRequest req, ILogger log) =>
+      [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "event")] HttpRequest req, ILogger log) =>
       await Method.IsUnauthenticated(Event.GetAll, req, log);
     [FunctionName("UpdateEvent")]
     public static async Task<IActionResult> UpdateEvent(
@@ -119,22 +119,24 @@ namespace VP_Functions.API
     [FunctionName("GetAllSponsors")]
     public static async Task<IActionResult> GetAllSponsor(
       [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "sponsor")] HttpRequest req, ILogger log) =>
-      await Method.IsUnauthenticated(FAQ.GetAll, req, log);
+      await Method.IsUnauthenticated(Sponsor.GetAll, req, log);
     [FunctionName("CreateSponsor")]
     public static async Task<IActionResult> CreateSponsor(
       [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "sponsor")] HttpRequest req,
+      [Blob("website-upload/sponsors", FileAccess.ReadWrite)] CloudBlobDirectory blobDirectory,
       ClaimsPrincipal principal, ILogger log) =>
-      await Method.IsAuthenticated(FAQ.CreateOrUpdate, req, principal, log, -1);
+      await Method.IsAuthenticated(Sponsor.CreateOrUpdate, req, principal, log, blobDirectory, -1);
     [FunctionName("UpdateSponsor")]
     public static async Task<IActionResult> UpdateSponsor(
       [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "sponsor/{id:int}")] HttpRequest req,
+      [Blob("website-upload/sponsors", FileAccess.ReadWrite)] CloudBlobDirectory blobDirectory,
       ClaimsPrincipal principal, ILogger log, int id) =>
-      await Method.IsAuthenticated(FAQ.CreateOrUpdate, req, principal, log, id);
+      await Method.IsAuthenticated(Sponsor.CreateOrUpdate, req, principal, log, blobDirectory, id);
     [FunctionName("DeleteSponsor")]
     public static async Task<IActionResult> DeleteSponsor(
       [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "sponsor/{id:int}")] HttpRequest req,
       ClaimsPrincipal principal, ILogger log, int id) =>
-      await Method.IsAuthenticated(FAQ.Delete, req, principal, log, id);
+      await Method.IsAuthenticated(Sponsor.Delete, req, principal, log, id);
 
     // ==============
     // USER ENDPOINTS

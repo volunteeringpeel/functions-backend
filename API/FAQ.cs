@@ -19,6 +19,7 @@ namespace VP_Functions.API
       var (err, reader) = await FancyConn.Shared.Reader("SELECT [faq_id], [question], [answer] FROM [faq] ORDER BY [priority]");
       if (err) return Response.Error("Unable to get FAQs.", FancyConn.Shared.lastError);
       var faqs = reader.ToJArray();
+      reader.Close();
 
       return Response.Ok("Got FAQs successfully.", faqs);
     }

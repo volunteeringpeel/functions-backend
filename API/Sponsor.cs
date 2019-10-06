@@ -24,6 +24,7 @@ namespace VP_Functions.API
         FROM [sponsor] ORDER BY [priority]");
       if (err) return Response.Error("Unable to get sponsors.", FancyConn.Shared.lastError);
       var faqs = reader.ToJArray();
+      reader.Close();
 
       return Response.Ok("Got FAQs successfully.", faqs);
     }

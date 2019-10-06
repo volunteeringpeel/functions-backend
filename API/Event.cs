@@ -78,6 +78,7 @@ namespace VP_Functions.API
           from col in shiftCols
           select new JProperty(col, reader[col])));
       }
+      reader.Close();
 
       return Response.Ok("Retrieved events successfully.", data);
     }
