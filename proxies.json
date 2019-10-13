@@ -1,0 +1,26 @@
+﻿{
+  "$schema": "http://json.schemastore.org/proxies",
+  "proxies": {
+    "api": {
+      "matchCondition": {
+        "methods": [ "DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT" ],
+        "route": "/api/{*endpoint}"
+      },
+      "backendUri": "https://localhost/{endpoint}"
+    },
+    "react-app-home": {
+      "matchCondition": {
+        "methods": [ "GET", "HEAD", "OPTIONS" ],
+        "route": "/"
+      },
+      "backendUri": "https://volunteeringpeel.z13.web.core.windows.net/index.html"
+    },
+    "react-app": {
+      "matchCondition": {
+        "methods": [ "GET", "HEAD", "OPTIONS" ],
+        "route": "/{*path}"
+      },
+      "backendUri": "https://volunteeringpeel.z13.web.core.windows.net/{path}"
+    }
+  }
+}

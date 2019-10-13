@@ -80,7 +80,7 @@ namespace VP_Functions.Helpers
       {
         string email = principal?.FindFirst(ClaimTypes.Email)?.Value;
         if (email == null)
-          return Response.BadRequest("Not logged in.");
+          return Response.Error<object>($"Not logged in.", statusCode: HttpStatusCode.Unauthorized);
 
         FancyConn.EnsureShared();
 
@@ -101,7 +101,7 @@ namespace VP_Functions.Helpers
       }
       finally
       {
-        FancyConn.Shared.Dispose();
+        FancyConn.Shared?.Dispose();
       }
     }
 
